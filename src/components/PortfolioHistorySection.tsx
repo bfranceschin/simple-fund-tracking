@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { addDays, format, isAfter, parseISO } from 'date-fns'
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { fetchSingleTokenHistoricalPrice } from '@/lib/api/client'
@@ -198,6 +198,60 @@ export default function PortfolioHistorySection() {
     }
   }, [graphMode])
 
+  const baselineValue = useMemo(() => {
+    if (chartData.length === 0) return 0
+    if (graphMode === 'percent') return 0
+
+    const firstValue = Number(chartData[0][chartConfig.dataKey as keyof (typeof chartData)[number]])
+    return Number.isFinite(firstValue) ? firstValue : 0
+  }, [chartData, chartConfig.dataKey, graphMode])
+
+  const chartSeriesData = useMemo(() => {
+    const rowsWithSplitPoints: Array<
+      (typeof chartData)[number] & {
+        aboveValue: number | null
+        belowValue: number | null
+        displayDate: string
+      }
+    > = []
+
+    let previousValue: number | null = null
+
+    chartData.forEach((row, index) => {
+      const rawValue = Number(row[chartConfig.dataKey as keyof typeof row])
+      const value = Number.isFinite(rawValue) ? rawValue : 0
+
+      if (previousValue !== null) {
+        const previousDelta = previousValue - baselineValue
+        const currentDelta = value - baselineValue
+        const crossedBaseline =
+          (previousDelta < 0 && currentDelta > 0) ||
+          (previousDelta > 0 && currentDelta < 0)
+
+        if (crossedBaseline) {
+          rowsWithSplitPoints.push({
+            ...row,
+            date: `${row.date}__split__${index}`,
+            displayDate: row.date,
+            aboveValue: baselineValue,
+            belowValue: baselineValue,
+          })
+        }
+      }
+
+      rowsWithSplitPoints.push({
+        ...row,
+        displayDate: row.date,
+        aboveValue: value >= baselineValue ? value : null,
+        belowValue: value < baselineValue ? value : null,
+      })
+
+      previousValue = value
+    })
+
+    return rowsWithSplitPoints
+  }, [baselineValue, chartConfig.dataKey, chartData])
+
   const handleBackfill = async () => {
     if (snapshotLoading || snapshotError || isBackfilling || missingDates.length === 0 || !firstTransactionDate) return
 
@@ -379,11 +433,24 @@ export default function PortfolioHistorySection() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <ComposedChart data={chartSeriesData}>
+                <defs>
+                  <linearGradient id="portfolioAboveFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22C55E" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#22C55E" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="portfolioBelowFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#EF4444" stopOpacity={0.05} />
+                    <stop offset="100%" stopColor="#EF4444" stopOpacity={0.35} />
+                  </linearGradient>
+                </defs>
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 12 }}
                   tickFormatter={(value) => {
+                    if (typeof value === 'string' && value.includes('__split__')) {
+                      return ''
+                    }
                     try {
                       return format(parseISO(value), 'MMM d')
                     } catch {
@@ -396,9 +463,23 @@ export default function PortfolioHistorySection() {
                   tickFormatter={(value) => chartConfig.yFormatter(Number(value))}
                   width={80}
                 />
+                <ReferenceLine
+                  y={baselineValue}
+                  stroke="#94A3B8"
+                  strokeDasharray="3 3"
+                  ifOverflow="extendDomain"
+                />
                 <Tooltip
                   formatter={(value: number) => [chartConfig.tooltipFormatter(value), chartConfig.label]}
-                  labelFormatter={(label) => {
+                  labelFormatter={(label, payload) => {
+                    const displayDate = payload?.[0]?.payload?.displayDate
+                    if (displayDate) {
+                      try {
+                        return format(parseISO(displayDate), 'MMM d, yyyy')
+                      } catch {
+                        return displayDate
+                      }
+                    }
                     try {
                       return format(parseISO(label), 'MMM d, yyyy')
                     } catch {
@@ -406,14 +487,43 @@ export default function PortfolioHistorySection() {
                     }
                   }}
                 />
+                <Area
+                  type="monotone"
+                  dataKey="aboveValue"
+                  baseValue={baselineValue}
+                  stroke="none"
+                  fill="url(#portfolioAboveFill)"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="belowValue"
+                  baseValue={baselineValue}
+                  stroke="none"
+                  fill="url(#portfolioBelowFill)"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
                 <Line
                   type="monotone"
-                  dataKey={chartConfig.dataKey}
-                  stroke={chartConfig.color}
+                  dataKey="aboveValue"
+                  stroke="#22C55E"
                   strokeWidth={2}
                   dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
                 />
-              </LineChart>
+                <Line
+                  type="monotone"
+                  dataKey="belowValue"
+                  stroke="#EF4444"
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls={false}
+                  isAnimationActive={false}
+                />
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>
