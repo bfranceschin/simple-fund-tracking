@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { addDays, format, isAfter, parseISO } from 'date-fns'
-import { Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { Area, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { fetchSingleTokenHistoricalPrice } from '@/lib/api/client'
@@ -433,7 +433,17 @@ export default function PortfolioHistorySection() {
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartSeriesData}>
+              <ComposedChart data={chartSeriesData}>
+                <defs>
+                  <linearGradient id="portfolioAboveFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#22C55E" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#22C55E" stopOpacity={0.05} />
+                  </linearGradient>
+                  <linearGradient id="portfolioBelowFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#EF4444" stopOpacity={0.05} />
+                    <stop offset="100%" stopColor="#EF4444" stopOpacity={0.35} />
+                  </linearGradient>
+                </defs>
                 <XAxis
                   dataKey="date"
                   tick={{ fontSize: 12 }}
@@ -477,6 +487,24 @@ export default function PortfolioHistorySection() {
                     }
                   }}
                 />
+                <Area
+                  type="monotone"
+                  dataKey="aboveValue"
+                  baseValue={baselineValue}
+                  stroke="none"
+                  fill="url(#portfolioAboveFill)"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="belowValue"
+                  baseValue={baselineValue}
+                  stroke="none"
+                  fill="url(#portfolioBelowFill)"
+                  isAnimationActive={false}
+                  connectNulls={false}
+                />
                 <Line
                   type="monotone"
                   dataKey="aboveValue"
@@ -495,7 +523,7 @@ export default function PortfolioHistorySection() {
                   connectNulls={false}
                   isAnimationActive={false}
                 />
-              </LineChart>
+              </ComposedChart>
             </ResponsiveContainer>
           )}
         </div>
