@@ -1,0 +1,9 @@
+{
+  "id": "buy-btc-2026-02-09",
+  "date": "2026-02-09",
+  "type": "BUY",
+  "tokenSymbol": "BTC",
+  "amount": 0.01,
+  "priceAtTransaction": 100000,
+  "usdValue": 1000
+}

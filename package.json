@@ -1,0 +1,42 @@
+{
+  "name": "simple-portfolio",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format-check": "prettier --check .",
+    "portfolio:bootstrap": "node scripts/portfolio-cli.mjs bootstrap",
+    "portfolio:tx": "node scripts/portfolio-cli.mjs tx",
+    "portfolio:token": "node scripts/portfolio-cli.mjs token",
+    "portfolio:settings": "node scripts/portfolio-cli.mjs settings"
+  },
+  "dependencies": {
+    "@headlessui/react": "^2.1.1",
+    "@heroicons/react": "^2.1.5",
+    "convex": "^1.31.7",
+    "date-fns": "^3.6.0",
+    "next": "14.2.5",
+    "numeral": "^2.0.6",
+    "react": "^18",
+    "react-dom": "^18",
+    "recharts": "^2.12.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/numeral": "^2.0.5",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8",
+    "prettier": "^3.3.3",
+    "tailwindcss": "^3.3.0",
+    "typescript": "^5"
+  }
+}
