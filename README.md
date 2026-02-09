@@ -1,4 +1,4 @@
-# Simple Portfolio
+# simple-fund-tracking
 
 A Next.js 14 app for tracking a crypto portfolio using a quota-based fund model, with portfolio data stored in Convex.
 
