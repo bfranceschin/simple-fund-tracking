@@ -426,6 +426,35 @@ export default function PortfolioHistorySection() {
     abortRef.current.abort()
   }
 
+  const renderTooltipContent = ({ active, payload }: { active?: boolean; payload?: Array<{ payload?: (ChartRow & { displayDate?: string }) }> }) => {
+    if (!active || !payload || payload.length === 0) return null
+
+    const row = payload[0]?.payload
+    if (!row) return null
+
+    const rawDate = row.displayDate || row.date.split('__')[0]
+    const isCurrentPoint = Boolean(row.isCurrentPoint)
+    const rawValue = Number(row[chartConfig.dataKey as keyof ChartRow])
+    const value = Number.isFinite(rawValue) ? rawValue : 0
+
+    let title = rawDate
+    try {
+      const formattedDate = format(parseISO(rawDate), 'MMM d, yyyy')
+      title = isCurrentPoint ? `${formattedDate} (Now)` : formattedDate
+    } catch {
+      title = rawDate
+    }
+
+    return (
+      <div className="bg-white border border-gray-300 px-3 py-2 text-sm shadow-sm">
+        <div className="font-medium text-gray-900 mb-1">{title}</div>
+        <div style={{ color: value >= baselineValue ? '#16A34A' : '#EF4444' }}>
+          {chartConfig.label}: {chartConfig.tooltipFormatter(value)}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <section className="card">
       <div className="flex flex-col gap-6">
@@ -556,24 +585,7 @@ export default function PortfolioHistorySection() {
                   ifOverflow="extendDomain"
                 />
                 <Tooltip
-                  formatter={(value: number) => [chartConfig.tooltipFormatter(value), chartConfig.label]}
-                  labelFormatter={(label, payload) => {
-                    const displayDate = payload?.[0]?.payload?.displayDate
-                    const isCurrentPoint = Boolean(payload?.[0]?.payload?.isCurrentPoint)
-                    if (displayDate) {
-                      try {
-                        const formattedDate = format(parseISO(displayDate), 'MMM d, yyyy')
-                        return isCurrentPoint ? `${formattedDate} (Now)` : formattedDate
-                      } catch {
-                        return displayDate
-                      }
-                    }
-                    try {
-                      return format(parseISO(label), 'MMM d, yyyy')
-                    } catch {
-                      return label
-                    }
-                  }}
+                  content={renderTooltipContent}
                 />
                 <Area
                   type="monotone"
