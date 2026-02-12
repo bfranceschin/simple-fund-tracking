@@ -1,11 +1,11 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDays, format, isAfter, parseISO } from 'date-fns'
 import { Area, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../convex/_generated/api'
-import { fetchSingleTokenHistoricalPrice } from '@/lib/api/client'
+import { fetchPrices, fetchSingleTokenHistoricalPrice } from '@/lib/api/client'
 import { calculatePortfolioValue, processTransactions } from '@/lib/utils/fund-calculations'
 import { PriceData } from '@/lib/types/portfolio'
 import { formatCurrency } from '@/lib/utils/formatters'
@@ -22,6 +22,26 @@ interface BackfillProgress {
   total: number
   date: string
   status: string
+}
+
+interface ChartRow {
+  date: string
+  portfolioValue: number
+  totalShares: number
+  shareValue: number
+  percentValue: number
+  percentShare: number
+  isCurrentPoint?: boolean
+}
+
+function calculateFundReturnPercent(
+  portfolioValue: number,
+  totalShares: number,
+  initialQuotaValue: number
+): number {
+  if (initialQuotaValue <= 0) return 0
+  const quotaValue = totalShares === 0 ? initialQuotaValue : portfolioValue / totalShares
+  return ((quotaValue / initialQuotaValue) - 1) * 100
 }
 
 function getFirstTransactionDate(transactionDates: string[]): string | null {
@@ -137,6 +157,7 @@ export default function PortfolioHistorySection() {
   const [progress, setProgress] = useState<BackfillProgress | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [graphMode, setGraphMode] = useState<GraphMode>('total')
+  const [currentPortfolioPoint, setCurrentPortfolioPoint] = useState<{ date: string; portfolioValue: number; totalShares: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const existingDates = useMemo(() => {
@@ -149,25 +170,88 @@ export default function PortfolioHistorySection() {
     return range.filter((date) => !existingDates.has(date))
   }, [existingDates, firstTransactionDate, yesterday])
 
-  const chartData = useMemo(() => {
+  const chartData = useMemo<ChartRow[]>(() => {
     const rows = (dailyEntries || []).map((entry) => ({
       date: entry.date,
       portfolioValue: entry.portfolioValue,
       totalShares: entry.totalShares,
       shareValue: entry.totalShares === 0 ? 0 : entry.portfolioValue / entry.totalShares,
+      percentValue: 0,
+      percentShare: 0,
     }))
 
     if (rows.length === 0) return rows
 
-    const baseValue = rows[0].portfolioValue || 0
-    const baseShare = rows[0].shareValue || 0
-
     return rows.map((row) => ({
       ...row,
-      percentValue: baseValue > 0 ? ((row.portfolioValue / baseValue) - 1) * 100 : 0,
-      percentShare: baseShare > 0 ? ((row.shareValue / baseShare) - 1) * 100 : 0,
+      percentValue: calculateFundReturnPercent(row.portfolioValue, row.totalShares, initialQuotaValue),
+      percentShare: calculateFundReturnPercent(row.portfolioValue, row.totalShares, initialQuotaValue),
     }))
-  }, [dailyEntries])
+  }, [dailyEntries, initialQuotaValue])
+
+  useEffect(() => {
+    if (snapshotLoading || snapshotError || !snapshot) {
+      setCurrentPortfolioPoint(null)
+      return
+    }
+
+    let isActive = true
+
+    const loadCurrentPoint = async () => {
+      try {
+        const response = await fetchPrices()
+        if (!isActive) return
+
+        const prices: Record<string, PriceData> = response.priceData ? { ...response.priceData } : {}
+        if (!response.priceData) {
+          Object.entries(response.prices).forEach(([tokenId, price]) => {
+            prices[tokenId] = { price }
+          })
+        }
+
+        const fundState = processTransactions(transactions, undefined, initialQuotaValue)
+        const portfolioValue = calculatePortfolioValue(fundState, prices, tokens)
+
+        setCurrentPortfolioPoint({
+          date: today,
+          portfolioValue,
+          totalShares: fundState.totalShares,
+        })
+      } catch (currentPointError) {
+        console.error('[PortfolioHistory] Failed to fetch current point:', currentPointError)
+        if (isActive) {
+          setCurrentPortfolioPoint(null)
+        }
+      }
+    }
+
+    loadCurrentPoint()
+
+    return () => {
+      isActive = false
+    }
+  }, [initialQuotaValue, snapshot, snapshotError, snapshotLoading, today, tokens, transactions])
+
+  const chartDataWithCurrent = useMemo<ChartRow[]>(() => {
+    if (!currentPortfolioPoint || chartData.length === 0) {
+      return chartData
+    }
+
+    const shareValue = currentPortfolioPoint.totalShares === 0 ? 0 : currentPortfolioPoint.portfolioValue / currentPortfolioPoint.totalShares
+
+    return [
+      ...chartData,
+      {
+        date: `${currentPortfolioPoint.date}__current`,
+        portfolioValue: currentPortfolioPoint.portfolioValue,
+        totalShares: currentPortfolioPoint.totalShares,
+        shareValue,
+        percentValue: calculateFundReturnPercent(currentPortfolioPoint.portfolioValue, currentPortfolioPoint.totalShares, initialQuotaValue),
+        percentShare: calculateFundReturnPercent(currentPortfolioPoint.portfolioValue, currentPortfolioPoint.totalShares, initialQuotaValue),
+        isCurrentPoint: true,
+      },
+    ]
+  }, [chartData, currentPortfolioPoint, initialQuotaValue])
 
   const chartConfig = useMemo(() => {
     switch (graphMode) {
@@ -203,13 +287,13 @@ export default function PortfolioHistorySection() {
     if (chartData.length === 0) return 0
     if (graphMode === 'percent') return 0
 
-    const firstValue = Number(chartData[0][chartConfig.dataKey as keyof (typeof chartData)[number]])
+    const firstValue = Number(chartData[0][chartConfig.dataKey as keyof ChartRow])
     return Number.isFinite(firstValue) ? firstValue : 0
   }, [chartData, chartConfig.dataKey, graphMode])
 
   const chartSeriesData = useMemo(() => {
     const rowsWithSplitPoints: Array<
-      (typeof chartData)[number] & {
+      ChartRow & {
         aboveValue: number | null
         belowValue: number | null
         displayDate: string
@@ -218,7 +302,7 @@ export default function PortfolioHistorySection() {
 
     let previousValue: number | null = null
 
-    chartData.forEach((row, index) => {
+    chartDataWithCurrent.forEach((row, index) => {
       const rawValue = Number(row[chartConfig.dataKey as keyof typeof row])
       const value = Number.isFinite(rawValue) ? rawValue : 0
 
@@ -233,7 +317,7 @@ export default function PortfolioHistorySection() {
           rowsWithSplitPoints.push({
             ...row,
             date: `${row.date}__split__${index}`,
-            displayDate: row.date,
+            displayDate: row.date.split('__')[0],
             aboveValue: baselineValue,
             belowValue: baselineValue,
           })
@@ -242,7 +326,7 @@ export default function PortfolioHistorySection() {
 
       rowsWithSplitPoints.push({
         ...row,
-        displayDate: row.date,
+        displayDate: row.date.split('__')[0],
         aboveValue: value >= baselineValue ? value : null,
         belowValue: value < baselineValue ? value : null,
       })
@@ -251,7 +335,7 @@ export default function PortfolioHistorySection() {
     })
 
     return rowsWithSplitPoints
-  }, [baselineValue, chartConfig.dataKey, chartData])
+  }, [baselineValue, chartConfig.dataKey, chartDataWithCurrent])
 
   const handleBackfill = async () => {
     if (snapshotLoading || snapshotError || isBackfilling || missingDates.length === 0 || !firstTransactionDate) return
@@ -428,7 +512,7 @@ export default function PortfolioHistorySection() {
         )}
 
         <div className="h-72">
-          {chartData.length === 0 ? (
+          {chartSeriesData.length === 0 ? (
             <div className="h-full flex items-center justify-center text-sm text-gray-500">
               No historical data stored yet.
             </div>
@@ -452,10 +536,11 @@ export default function PortfolioHistorySection() {
                     if (typeof value === 'string' && value.includes('__split__')) {
                       return ''
                     }
+                    const rawDate = typeof value === 'string' ? value.split('__')[0] : value
                     try {
-                      return format(parseISO(value), 'MMM d')
+                      return format(parseISO(rawDate), 'MMM d')
                     } catch {
-                      return value
+                      return rawDate
                     }
                   }}
                 />
@@ -474,9 +559,11 @@ export default function PortfolioHistorySection() {
                   formatter={(value: number) => [chartConfig.tooltipFormatter(value), chartConfig.label]}
                   labelFormatter={(label, payload) => {
                     const displayDate = payload?.[0]?.payload?.displayDate
+                    const isCurrentPoint = Boolean(payload?.[0]?.payload?.isCurrentPoint)
                     if (displayDate) {
                       try {
-                        return format(parseISO(displayDate), 'MMM d, yyyy')
+                        const formattedDate = format(parseISO(displayDate), 'MMM d, yyyy')
+                        return isCurrentPoint ? `${formattedDate} (Now)` : formattedDate
                       } catch {
                         return displayDate
                       }
