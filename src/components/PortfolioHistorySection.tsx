@@ -119,6 +119,7 @@ async function fetchPricesForDate(
 export default function PortfolioHistorySection() {
   const { snapshot, loading: snapshotLoading, error: snapshotError } = usePortfolioData()
   const today = format(new Date(), 'yyyy-MM-dd')
+  const yesterday = format(addDays(new Date(), -1), 'yyyy-MM-dd')
   const transactions = snapshot?.transactions || []
   const tokens = snapshot?.tokens || []
   const initialQuotaValue = snapshot?.settings?.initialQuotaValue ?? 1
@@ -144,9 +145,9 @@ export default function PortfolioHistorySection() {
 
   const missingDates = useMemo(() => {
     if (!firstTransactionDate) return []
-    const range = buildDateRange(firstTransactionDate, today)
+    const range = buildDateRange(firstTransactionDate, yesterday)
     return range.filter((date) => !existingDates.has(date))
-  }, [existingDates, firstTransactionDate, today])
+  }, [existingDates, firstTransactionDate, yesterday])
 
   const chartData = useMemo(() => {
     const rows = (dailyEntries || []).map((entry) => ({
