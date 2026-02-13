@@ -13,7 +13,8 @@ const tokenValidator = {
     v.literal("AI"),
     v.literal("Gaming/Meme"),
     v.literal("Defi"),
-    v.literal("Micro")
+    v.literal("Micro"),
+    v.literal("Privacy")
   ),
   cmcSymbol: v.optional(v.string()),
   preferredAPI: v.union(v.literal("coingecko"), v.literal("coinmarketcap")),

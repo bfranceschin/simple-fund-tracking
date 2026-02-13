@@ -1,5 +1,5 @@
 // Token categories
-export type TokenCategory = 'Btc' | 'Eth' | 'AI' | 'Gaming/Meme' | 'Defi' | 'Micro'
+export type TokenCategory = 'Btc' | 'Eth' | 'AI' | 'Gaming/Meme' | 'Defi' | 'Micro' | 'Privacy'
 
 // Special calculation types
 export type SpecialCalculationType = 'ETH_AMOUNT' | 'BTC_AMOUNT' | 'REGULAR'

@@ -29,6 +29,9 @@ yarn-error.log*
 .env
 .portfolio-data.local.json
 
+# operations (token/transaction JSON files)
+scripts/operations/
+
 # vercel
 .vercel
 

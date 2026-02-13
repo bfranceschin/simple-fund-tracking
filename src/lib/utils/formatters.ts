@@ -119,7 +119,8 @@ export function getCategoryColor(category: string): string {
     'AI': '#10B981',
     'Gaming/Meme': '#8B5CF6',
     'Defi': '#F59E0B',
-    'Micro': '#6B7280'
+    'Micro': '#6B7280',
+    'Privacy': '#6B7280',
   }
   
   return colors[category as keyof typeof colors] || '#6B7280'

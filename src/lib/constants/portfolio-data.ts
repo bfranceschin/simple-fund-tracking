@@ -7,6 +7,7 @@ export const CATEGORY_COLORS = {
   'Gaming/Meme': '#8B5CF6',
   Defi: '#3B82F6',
   Micro: '#EC4899',
+  Privacy: '#6B7280',
 } as const;
 
 export const CATEGORY_NAMES = {
@@ -16,4 +17,5 @@ export const CATEGORY_NAMES = {
   'Gaming/Meme': 'Gaming & Meme',
   Defi: 'DeFi',
   Micro: 'Micro Cap',
+  Privacy: 'Privacy',
 } as const;
