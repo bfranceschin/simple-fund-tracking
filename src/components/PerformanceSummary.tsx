@@ -2,20 +2,34 @@
 
 import { usePortfolio } from '@/hooks/usePortfolio'
 import { usePortfolioDate } from '@/contexts/PortfolioDateContext'
-import { formatCurrency, formatPerformance, getPerformanceIcon } from '@/lib/utils/formatters'
+import { formatCurrency, formatPerformance } from '@/lib/utils/formatters'
+
+function safeToFixed(value: number | null | undefined, decimals: number): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '-'
+  return value.toFixed(decimals)
+}
+
+function formatSignedCurrency(value: number): string {
+  const absolute = formatCurrency(Math.abs(value))
+  if (value > 0) return `+${absolute}`
+  if (value < 0) return `-${absolute}`
+  return absolute
+}
 
 export default function PerformanceSummary() {
   const { selectedDate } = usePortfolioDate()
-  const { summary, loading, error, isHistorical } = usePortfolio({ selectedDate })
+  const { summary, loading, error } = usePortfolio({ selectedDate })
 
   if (loading) {
     return (
       <div className="card">
-        <div className="animate-pulse">
-          <div className="h-6 bg-gray-200 rounded w-1/3 mb-4"></div>
-          <div className="space-y-3">
-            <div className="h-4 bg-gray-200 rounded"></div>
-            <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 w-1/3 rounded bg-gray-200" />
+          <div className="h-28 rounded-xl bg-gray-200" />
+          <div className="grid grid-cols-3 gap-3">
+            <div className="h-16 rounded-lg bg-gray-200" />
+            <div className="h-16 rounded-lg bg-gray-200" />
+            <div className="h-16 rounded-lg bg-gray-200" />
           </div>
         </div>
       </div>
@@ -25,12 +39,8 @@ export default function PerformanceSummary() {
   if (error) {
     return (
       <div className="card">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Performance Summary
-        </h2>
-        <div className="text-red-600">
-          Error: {error}
-        </div>
+        <h2 className="mb-4 text-xl font-semibold text-gray-900">Fund Performance</h2>
+        <div className="text-red-600">Error: {error}</div>
       </div>
     )
   }
@@ -38,131 +48,130 @@ export default function PerformanceSummary() {
   if (!summary) {
     return (
       <div className="card">
-        <h2 className="text-xl font-semibold text-gray-900 mb-4">
-          Performance Summary
-        </h2>
-        <div className="text-gray-500">
-          No data available
-        </div>
+        <h2 className="mb-4 text-xl font-semibold text-gray-900">Fund Performance</h2>
+        <div className="text-gray-500">No data available</div>
       </div>
     )
   }
 
-  // Debug logging
-  console.log('PerformanceSummary - summary:', {
-    quotaValue: summary.quotaValue,
-    initialQuotaValue: summary.initialQuotaValue,
-    quotaPerformance: summary.quotaPerformance,
-    totalShares: summary.totalShares,
-    totalValue: summary.totalValue,
-    baselineValue: summary.baselineValue,
-    totalPerformance: summary.totalPerformance
-  })
-
-  const isPositive = (summary.quotaPerformance ?? 0) >= 0
-  
-  // Safe formatting helpers
-  const safeToFixed = (value: number | null | undefined, decimals: number): string => {
-    if (value === null || value === undefined || isNaN(value)) return '-'
-    return value.toFixed(decimals)
-  }
+  const quotaPerformance = summary.quotaPerformance ?? 0
+  const pnl = (summary.totalValue ?? 0) - (summary.baselineValue ?? 0)
+  const isPositive = quotaPerformance >= 0
+  const isFlat = quotaPerformance === 0
+  const initialQuota = summary.initialQuotaValue ?? 1
+  const quotaValue = summary.quotaValue ?? 0
+  const valueRatio =
+    summary.baselineValue > 0
+      ? Math.min((summary.totalValue / summary.baselineValue) * 100, 100)
+      : 0
+  const tone = isFlat ? 'neutral' : isPositive ? 'up' : 'down'
+  const toneClasses = {
+    up: {
+      hero: 'from-emerald-50 to-white border-emerald-100',
+      value: 'text-emerald-700',
+      bar: 'bg-emerald-500',
+      badge: 'bg-emerald-100 text-emerald-800',
+    },
+    down: {
+      hero: 'from-rose-50 to-white border-rose-100',
+      value: 'text-rose-700',
+      bar: 'bg-rose-500',
+      badge: 'bg-rose-100 text-rose-800',
+    },
+    neutral: {
+      hero: 'from-slate-50 to-white border-slate-200',
+      value: 'text-slate-800',
+      bar: 'bg-slate-400',
+      badge: 'bg-slate-100 text-slate-700',
+    },
+  }[tone]
 
   return (
     <div className="card">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-        Fund Performance
-      </h2>
-      
-      {/* Primary Quota Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-        {/* Quota Value */}
-        <div className="text-center p-4 bg-blue-50 rounded-lg">
-          <div className="text-2xl font-bold text-blue-700">
-            ${safeToFixed(summary.quotaValue, 4)}
-          </div>
-          <div className="text-sm text-blue-600">Quota Value</div>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900">Fund Performance</h2>
+          <p className="mt-1 text-sm text-slate-500">Quota return and portfolio value vs initial capital</p>
         </div>
-
-        {/* Initial Quota */}
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-gray-700">
-            ${safeToFixed(summary.initialQuotaValue, 2)}
-          </div>
-          <div className="text-sm text-gray-500">Initial Quota</div>
-        </div>
-
-        {/* Quota Performance */}
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div 
-            className="text-2xl font-bold"
-            style={{ 
-              color: (summary.quotaPerformance ?? 0) > 0 ? '#059669' : (summary.quotaPerformance ?? 0) < 0 ? '#DC2626' : '#4B5563'
-            }}
-          >
-            {getPerformanceIcon(summary.quotaPerformance)} {formatPerformance(summary.quotaPerformance)}
-          </div>
-          <div className="text-sm text-gray-500">Fund Return</div>
-        </div>
-
-        {/* Total Shares */}
-        <div className="text-center p-4 bg-gray-50 rounded-lg">
-          <div className="text-2xl font-bold text-gray-700">
-            {(summary.totalShares ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-          </div>
-          <div className="text-sm text-gray-500">Total Shares</div>
-        </div>
+        <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${toneClasses.badge}`}>
+          {isPositive ? 'In profit' : isFlat ? 'Flat' : 'In drawdown'}
+        </span>
       </div>
 
-      {/* Portfolio Value Metrics */}
-      <div className="border-t border-gray-200 pt-6">
-        <h3 className="text-sm font-medium text-gray-500 mb-4">Portfolio Value</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Current Value */}
-          <div className="text-center">
-            <div className="text-xl font-bold text-gray-900">
-              {formatCurrency(summary.totalValue)}
-            </div>
-            <div className="text-sm text-gray-500">Current Value</div>
+      <div
+        className={`mb-5 rounded-xl border bg-gradient-to-br p-5 sm:p-6 ${toneClasses.hero}`}
+      >
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Fund Return</p>
+            <p className={`mt-1 text-4xl font-semibold tracking-tight tabular-nums ${toneClasses.value}`}>
+              {formatPerformance(quotaPerformance)}
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Quota{' '}
+              <span className="font-semibold tabular-nums text-slate-900">
+                ${safeToFixed(quotaValue, 4)}
+              </span>
+              <span className="text-slate-400"> / </span>
+              <span className="tabular-nums">${safeToFixed(initialQuota, 2)}</span>
+              <span className="text-slate-400"> initial</span>
+            </p>
           </div>
 
-          {/* Baseline Value */}
-          <div className="text-center">
-            <div className="text-xl font-bold text-gray-900">
-              {formatCurrency(summary.baselineValue)}
+          <div className="grid grid-cols-2 gap-x-8 gap-y-3 sm:text-right">
+            <div>
+              <p className="text-xs text-slate-500">Total Shares</p>
+              <p className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">
+                {(summary.totalShares ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </p>
             </div>
-            <div className="text-sm text-gray-500">Initial Investment</div>
+            <div>
+              <p className="text-xs text-slate-500">P&L</p>
+              <p className={`mt-0.5 text-sm font-semibold tabular-nums ${toneClasses.value}`}>
+                {formatSignedCurrency(pnl)}
+              </p>
+            </div>
           </div>
+        </div>
 
-          {/* Value Change */}
-          <div className="text-center">
-            <div 
-              className="text-xl font-bold"
-              style={{ 
-                color: (summary.totalPerformance ?? 0) > 0 ? '#059669' : (summary.totalPerformance ?? 0) < 0 ? '#DC2626' : '#4B5563'
-              }}
-            >
-              {getPerformanceIcon(summary.totalPerformance)} {formatCurrency((summary.totalValue ?? 0) - (summary.baselineValue ?? 0))}
-            </div>
-            <div className="text-sm text-gray-500">P&L</div>
+        <div className="mt-5">
+          <div className="mb-2 flex justify-between text-xs text-slate-500">
+            <span>Current value vs initial investment</span>
+            <span className="tabular-nums">
+              {summary.baselineValue > 0
+                ? `${((summary.totalValue / summary.baselineValue) * 100).toFixed(1)}%`
+                : '-'}
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-white/80 ring-1 ring-black/5">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${toneClasses.bar}`}
+              style={{ width: `${valueRatio}%` }}
+            />
           </div>
         </div>
       </div>
 
-      {/* Performance Bar */}
-      <div className="mt-6">
-        <div className="flex justify-between text-sm text-gray-600 mb-2">
-          <span>Initial: $1.00/share</span>
-          <span>Current: ${safeToFixed(summary.quotaValue, 4)}/share</span>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Current Value</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            {formatCurrency(summary.totalValue)}
+          </p>
         </div>
-        <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
-            className={`h-2 rounded-full transition-all duration-500 ${
-              isPositive ? 'bg-green-500' : 'bg-red-500'
-            }`}
-            style={{ 
-              width: `${Math.min(Math.abs(summary.quotaPerformance ?? 0) * 2, 100)}%` 
-            }}
-          ></div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Initial Investment
+          </p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            {formatCurrency(summary.baselineValue)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Quota / Share</p>
+          <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
+            ${safeToFixed(quotaValue, 4)}
+          </p>
         </div>
       </div>
     </div>
