@@ -3,11 +3,11 @@
 export const CATEGORY_COLORS = {
   Btc: '#F7931A',
   Eth: '#627EEA',
-  AI: '#10B981',
-  'Gaming/Meme': '#8B5CF6',
-  Defi: '#3B82F6',
-  Micro: '#EC4899',
-  Privacy: '#6B7280',
+  AI: '#0F766E',
+  'Gaming/Meme': '#7C3AED',
+  Defi: '#0284C7',
+  Micro: '#BE185D',
+  Privacy: '#475569',
 } as const;
 
 export const CATEGORY_NAMES = {
