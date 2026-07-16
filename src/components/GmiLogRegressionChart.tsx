@@ -7,6 +7,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,23 +17,27 @@ import { fetchBtcHistory } from '@/lib/api/client'
 import { formatCurrency } from '@/lib/utils/formatters'
 import {
   computeLogRegressionBands,
+  GMI_CHART_DEFAULTS,
   type BandPoint,
 } from '@/lib/utils/log-regression'
 
 const COLORS = {
   price: '#374151',
   fairValue: '#3B82F6',
-  oversold: '#16A34A',
-  overbought: '#FB923C',
-  extreme: '#EF4444',
+  bandNeg1: '#16A34A',
+  bandPos1: '#FB923C',
+  bandNeg2: '#F87171',
+  bandPos2: '#EF4444',
+  freeze: '#9CA3AF',
 } as const
 
 const SERIES = [
   { key: 'price', label: 'Price', color: COLORS.price },
   { key: 'fairValue', label: 'Log Trend Line (Fair Value)', color: COLORS.fairValue },
-  { key: 'oversoldNeg1', label: 'Oversold (−1 Std Dev)', color: COLORS.oversold },
-  { key: 'overboughtPos15', label: 'Overbought (+1.5 Std Dev)', color: COLORS.overbought },
-  { key: 'extremePos2', label: 'Extreme Overbought (+2 Std Dev)', color: COLORS.extreme },
+  { key: 'bandNeg1', label: '−1 Std Dev', color: COLORS.bandNeg1 },
+  { key: 'bandPos1', label: '+1 Std Dev', color: COLORS.bandPos1 },
+  { key: 'bandNeg2', label: '−2 Std Dev', color: COLORS.bandNeg2 },
+  { key: 'bandPos2', label: '+2 Std Dev', color: COLORS.bandPos2 },
 ] as const
 
 function formatLogAxis(value: number): string {
@@ -50,12 +55,14 @@ function formatLogAxis(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
-function formatChartDate(date: string): string {
-  try {
-    return format(parseISO(date), 'MMM yyyy')
-  } catch {
-    return date
-  }
+function formatTimeTick(time: number): string {
+  if (!Number.isFinite(time)) return ''
+  return format(new Date(time), 'MMM yyyy')
+}
+
+function formatTimeLabel(time: number): string {
+  if (!Number.isFinite(time)) return ''
+  return format(new Date(time), 'MMM d, yyyy')
 }
 
 function ChartTooltip({
@@ -65,18 +72,22 @@ function ChartTooltip({
 }: {
   active?: boolean
   payload?: Array<{ dataKey?: string | number; value?: number; color?: string; name?: string }>
-  label?: string
+  label?: string | number
 }) {
-  if (!active || !payload?.length || !label) {
+  if (!active || !payload?.length || label === undefined || label === null) {
     return null
   }
 
-  let title = label
-  try {
-    title = format(parseISO(label), 'MMM d, yyyy')
-  } catch {
-    // keep raw label
-  }
+  const title =
+    typeof label === 'number'
+      ? formatTimeLabel(label)
+      : (() => {
+          try {
+            return format(parseISO(String(label)), 'MMM d, yyyy')
+          } catch {
+            return String(label)
+          }
+        })()
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 text-sm">
@@ -85,7 +96,9 @@ function ChartTooltip({
         {payload.map((entry) => {
           const key = String(entry.dataKey ?? '')
           const series = SERIES.find((s) => s.key === key)
-          if (!series || entry.value === undefined) return null
+          if (!series || entry.value === undefined || entry.value === null) {
+            return null
+          }
           return (
             <div key={key} className="flex items-center justify-between gap-4">
               <span className="flex items-center gap-2 text-gray-600">
@@ -110,7 +123,6 @@ export default function GmiLogRegressionChart() {
   const [bands, setBands] = useState<BandPoint[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [rangeLabel, setRangeLabel] = useState<string>('')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -123,15 +135,15 @@ export default function GmiLogRegressionChart() {
         const response = await fetchBtcHistory(controller.signal)
         if (controller.signal.aborted) return
 
-        const nextBands = computeLogRegressionBands(response.points)
+        const nextBands = computeLogRegressionBands(
+          response.points,
+          GMI_CHART_DEFAULTS
+        )
         if (nextBands.length === 0) {
           throw new Error('Not enough Bitcoin price points to fit regression')
         }
 
         setBands(nextBands)
-        const start = response.metadata?.startDate ?? nextBands[0].date
-        const end = response.metadata?.endDate ?? nextBands[nextBands.length - 1].date
-        setRangeLabel(`${start} → ${end}`)
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Failed to load BTC history')
@@ -148,16 +160,43 @@ export default function GmiLogRegressionChart() {
   }, [])
 
   const yDomain = useMemo(() => {
-    if (!bands || bands.length === 0) return [1, 100000] as [number, number]
+    if (!bands || bands.length === 0) return [1000, 1_000_000] as [number, number]
     let min = Infinity
     let max = -Infinity
     for (const row of bands) {
-      min = Math.min(min, row.price, row.oversoldNeg1)
-      max = Math.max(max, row.price, row.extremePos2)
+      if (row.price != null) {
+        min = Math.min(min, row.price)
+        max = Math.max(max, row.price)
+      }
+      min = Math.min(min, row.bandNeg2)
+      max = Math.max(max, row.bandPos2)
     }
     const paddedMin = Math.max(min * 0.85, 0.01)
     const paddedMax = max * 1.15
     return [paddedMin, paddedMax] as [number, number]
+  }, [bands])
+
+  const freezeLabel = useMemo(() => {
+    try {
+      return format(parseISO(GMI_CHART_DEFAULTS.freezeDate), "MMM ''yy")
+    } catch {
+      return GMI_CHART_DEFAULTS.freezeDate
+    }
+  }, [])
+
+  const freezeTime = useMemo(
+    () => Date.parse(GMI_CHART_DEFAULTS.freezeDate),
+    []
+  )
+
+  const xDomain = useMemo(() => {
+    if (!bands || bands.length === 0) {
+      return [
+        Date.parse(GMI_CHART_DEFAULTS.chartStart),
+        Date.parse(GMI_CHART_DEFAULTS.chartEnd),
+      ] as [number, number]
+    }
+    return [bands[0].time, bands[bands.length - 1].time] as [number, number]
   }, [bands])
 
   if (loading) {
@@ -201,8 +240,9 @@ export default function GmiLogRegressionChart() {
           BTC Price vs Log Trend
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          GMI compounding machine · Buy at −1σ · Sell at +1.5σ / +2σ
-          {rangeLabel ? ` · ${rangeLabel}` : ''}
+          Frozen {freezeLabel} · ±1σ / ±2σ highway · Forward channel shows
+          possible price ranges, not a forecast ·{' '}
+          {GMI_CHART_DEFAULTS.chartStart} → {GMI_CHART_DEFAULTS.chartEnd}
         </p>
       </div>
 
@@ -214,9 +254,12 @@ export default function GmiLogRegressionChart() {
           >
             <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
             <XAxis
-              dataKey="date"
-              tickFormatter={formatChartDate}
+              type="number"
+              dataKey="time"
+              domain={xDomain}
+              tickFormatter={formatTimeTick}
               minTickGap={48}
+              tickCount={8}
               tick={{ fill: '#6B7280', fontSize: 11 }}
               axisLine={{ stroke: '#D1D5DB' }}
               tickLine={{ stroke: '#D1D5DB' }}
@@ -231,7 +274,12 @@ export default function GmiLogRegressionChart() {
               axisLine={{ stroke: '#D1D5DB' }}
               tickLine={{ stroke: '#D1D5DB' }}
             />
-            <Tooltip content={<ChartTooltip />} />
+            <Tooltip
+              content={<ChartTooltip />}
+              labelFormatter={(value) =>
+                typeof value === 'number' ? formatTimeLabel(value) : String(value)
+              }
+            />
             <Legend
               wrapperStyle={{ paddingTop: 12, fontSize: 12 }}
               formatter={(value) => {
@@ -240,39 +288,63 @@ export default function GmiLogRegressionChart() {
               }}
             />
 
-            <Line
-              type="monotone"
-              dataKey="extremePos2"
-              name="extremePos2"
-              stroke={COLORS.extreme}
-              strokeWidth={1.5}
-              dot={false}
-              isAnimationActive={false}
+            <ReferenceLine
+              x={freezeTime}
+              stroke={COLORS.freeze}
+              strokeDasharray="4 4"
+              label={{
+                value: `Frozen ${freezeLabel}`,
+                position: 'insideTopRight',
+                fill: '#6B7280',
+                fontSize: 11,
+              }}
             />
+
             <Line
-              type="monotone"
-              dataKey="overboughtPos15"
-              name="overboughtPos15"
-              stroke={COLORS.overbought}
+              type="linear"
+              dataKey="bandPos2"
+              name="bandPos2"
+              stroke={COLORS.bandPos2}
               strokeWidth={1.5}
               strokeDasharray="6 4"
               dot={false}
               isAnimationActive={false}
             />
             <Line
-              type="monotone"
-              dataKey="fairValue"
-              name="fairValue"
-              stroke={COLORS.fairValue}
-              strokeWidth={2}
+              type="linear"
+              dataKey="bandNeg2"
+              name="bandNeg2"
+              stroke={COLORS.bandNeg2}
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
               dot={false}
               isAnimationActive={false}
             />
             <Line
-              type="monotone"
-              dataKey="oversoldNeg1"
-              name="oversoldNeg1"
-              stroke={COLORS.oversold}
+              type="linear"
+              dataKey="bandPos1"
+              name="bandPos1"
+              stroke={COLORS.bandPos1}
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              dot={false}
+              isAnimationActive={false}
+            />
+            <Line
+              type="linear"
+              dataKey="bandNeg1"
+              name="bandNeg1"
+              stroke={COLORS.bandNeg1}
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              dot={false}
+              isAnimationActive={false}
+            />
+            <Line
+              type="linear"
+              dataKey="fairValue"
+              name="fairValue"
+              stroke={COLORS.fairValue}
               strokeWidth={2}
               dot={false}
               isAnimationActive={false}
@@ -284,6 +356,7 @@ export default function GmiLogRegressionChart() {
               stroke={COLORS.price}
               strokeWidth={1.75}
               dot={false}
+              connectNulls={false}
               isAnimationActive={false}
             />
           </ComposedChart>
