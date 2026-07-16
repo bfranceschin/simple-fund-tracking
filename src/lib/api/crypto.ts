@@ -2,6 +2,68 @@ import { CoinGeckoPriceResponse, TokenMetadata, PriceData } from '@/lib/types/po
 
 const COINGECKO_API_URL = process.env.NEXT_PUBLIC_COINGECKO_API_URL || 'https://api.coingecko.com/api/v3'
 
+function getCoinGeckoHeaders(): HeadersInit {
+  const apiKey = process.env.COINGECKO_API_KEY
+  if (!apiKey) {
+    return {}
+  }
+
+  // Demo keys use api.coingecko.com + x-cg-demo-api-key.
+  // Pro keys use pro-api.coingecko.com + x-cg-pro-api-key.
+  const isPro =
+    COINGECKO_API_URL.includes('pro-api.coingecko.com') ||
+    apiKey.startsWith('CG-Pro')
+
+  return {
+    [isPro ? 'x-cg-pro-api-key' : 'x-cg-demo-api-key']: apiKey,
+  }
+}
+
+export type BtcHistoryPoint = {
+  date: string
+  price: number
+}
+
+/**
+ * Full Bitcoin USD history for log-regression bands.
+ * Uses Blockchain.com market-price chart (full history from ~2009).
+ * CoinGecko demo/free plans only allow ~365 days, which is too short for GMI bands.
+ */
+export async function fetchBitcoinMarketHistory(): Promise<BtcHistoryPoint[]> {
+  const url =
+    'https://api.blockchain.info/charts/market-price?timespan=all&format=json'
+
+  const response = await fetch(url, {
+    next: { revalidate: 3600 },
+  })
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+
+  const data = (await response.json()) as {
+    values?: { x: number; y: number }[]
+  }
+
+  if (!Array.isArray(data.values) || data.values.length === 0) {
+    throw new Error('No Bitcoin price history returned from Blockchain.com')
+  }
+
+  const byDate = new Map<string, number>()
+
+  for (const point of data.values) {
+    if (!Number.isFinite(point.x) || !Number.isFinite(point.y) || point.y <= 0) {
+      continue
+    }
+    const date = new Date(point.x * 1000).toISOString().slice(0, 10)
+    byDate.set(date, point.y)
+  }
+
+  return Array.from(byDate.entries())
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, price]) => ({ date, price }))
+}
+
 /**
  * Fetch current prices, market cap, FDV, and 24h changes for multiple tokens from CoinGecko
  */
@@ -12,11 +74,8 @@ export async function fetchPricesWithCoinGecko(tokenIds: string[]): Promise<Reco
     const url = `${COINGECKO_API_URL}/coins/markets?ids=${ids}&vs_currency=usd&order=market_cap_desc&per_page=250&page=1&sparkline=false&price_change_percentage=24h`
     
     const response = await fetch(url, {
+      headers: getCoinGeckoHeaders(),
       next: { revalidate: 60 }, // Cache for 60 seconds
-      // headers: {
-      //   'Accept': 'application/json',
-      //   // ...(process.env.COINGECKO_API_KEY ? { 'x-cg-pro-api-key': process.env.COINGECKO_API_KEY } : {})
-      // },
     })
 
     if (!response.ok) {
@@ -303,6 +362,7 @@ export async function fetchHistoricalPriceSingle(tokenId: string, date: string):
     const url = `${COINGECKO_API_URL}/coins/${tokenId}/history?date=${formattedDate}&localization=false`
     
     const response = await fetch(url, {
+      headers: getCoinGeckoHeaders(),
       next: { revalidate: 3600 }, // Cache historical data for 1 hour
     })
 

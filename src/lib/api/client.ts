@@ -183,4 +183,47 @@ export async function fetchSingleTokenHistoricalPrice(
   }
 
   return data as SingleTokenHistoricalResponse
-} 
+}
+
+export interface BtcHistoryResponse {
+  asset: string
+  points: { date: string; price: number }[]
+  source: string
+  timestamp: string
+  metadata?: {
+    pointCount: number
+    fetchTimeMs: number
+    startDate: string | null
+    endDate: string | null
+  }
+}
+
+/**
+ * Fetch full Bitcoin daily history for the GMI log-regression chart
+ */
+export async function fetchBtcHistory(
+  signal?: AbortSignal
+): Promise<BtcHistoryResponse> {
+  const response = await fetch('/api/prices/btc-history', {
+    headers: {
+      Accept: 'application/json',
+    },
+    signal,
+  })
+
+  if (!response.ok) {
+    const errorData: ApiError = await response.json().catch(() => ({
+      error: 'Unknown error',
+    }))
+    const message =
+      errorData.message ||
+      errorData.error ||
+      `HTTP error! status: ${response.status}`
+    const error = new Error(message) as Error & { status?: number }
+    error.status = response.status
+    throw error
+  }
+
+  return (await response.json()) as BtcHistoryResponse
+}
+

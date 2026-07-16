@@ -5,6 +5,7 @@ import PortfolioTable from '@/components/PortfolioTable'
 import CategoryChart from '@/components/CategoryChart'
 import PerformanceSummary from '@/components/PerformanceSummary'
 import PortfolioHistorySection from '@/components/PortfolioHistorySection'
+import GmiLogRegressionChart from '@/components/GmiLogRegressionChart'
 import ErrorBoundary from '@/components/ui/ErrorBoundary'
 import LoadingSpinner from '@/components/ui/LoadingSpinner'
 
@@ -70,6 +71,13 @@ export default function PortfolioPage({ params }: PortfolioPageProps) {
           </ErrorBoundary>
         </div>
       </div>
+
+      {/* GMI Log Regression — BTC fair-value highway */}
+      <ErrorBoundary>
+        <Suspense fallback={<LoadingFallback height="h-96" />}>
+          <GmiLogRegressionChart />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* Footer Info */}
       <div className="text-center text-sm text-gray-500 py-4">
